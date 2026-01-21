@@ -77,7 +77,7 @@ function project(network_data::Dict{String,Any}, V::Array{Float64,2}, Sg::Array{
     return V, Sg
 end
 
-"""
+
 @compile_workload begin
     # toy example to precompile the code
 
@@ -114,6 +114,6 @@ end
     solve_ac_opf(data, solver)
     solve_ac_pf(data, solver)
 end
-"""
+
 
 end # module OPFHelpers
