@@ -781,7 +781,7 @@ class OPFDual(pl.LightningModule):
             subprocess.run(
                 [
                     "julia",
-                    "--project=@.",
+                    "--project=/home/jsnixon23/projects/dual-learning-opf/upstream",
                     script_path.as_posix(),
                     "--casefile",
                     graph.casefile[0],
