@@ -862,7 +862,10 @@ class OPFDual(pl.LightningModule):
             # there is only one batch element
             cost_per_batch = cost.sum()
         # normalize the cost by the reference cost (IPOPT cost)
+        #JSN: commented out the following line
+        '''
         cost_per_batch = cost_per_batch / graph.reference_cost
+        '''
         return cost_per_batch.mean()
 
     def constraints(
