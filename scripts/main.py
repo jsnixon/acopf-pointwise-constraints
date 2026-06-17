@@ -68,7 +68,7 @@ def add_common_args(parser):
     # data arguments
     group = parser.add_argument_group("Data")
     group.add_argument("--data_dir", type=str, default="./data")
-    group.add_argument("--case_name", type=str, default="case118_ieee")
+    group.add_argument("--case_name", type=str, default="case30_ieee")
     group.add_argument("--batch_size", type=int, default=32)
     group.add_argument("--num_workers", type=int, default=0)
     group.add_argument(
@@ -150,8 +150,8 @@ def make_trainer(params, callbacks=[], wandb_kwargs={}):
     trainer_logger = None
     if params["log"]:
         trainer_logger = WandbLogger(
-            entity="damowerko-academic",
-            project="opf",
+            entity="alelab",
+            project="opf_param",
             save_dir=params["log_dir"],
             config=params,
             log_model=True,
