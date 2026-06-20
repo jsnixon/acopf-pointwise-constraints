@@ -28,7 +28,7 @@ def load_run(
     data_dir: str = "../data",
     best: bool = True,
 ):
-    run_uri = f"wandb://damowerko-academic/opf/{run_id}"
+    run_uri = f"wandb://alelab/opf_param/{run_id}"
     base, path = run_uri.split("://")
     if base != "wandb":
         raise ValueError("Only wandb runs are supported")
@@ -64,7 +64,7 @@ def load_run(
     # load checkpoint
     with TemporaryDirectory() as tmpdir:
         tag = "best" if best else "latest"
-        artifact = api.artifact(f"damowerko-academic/opf/model-{run.id}:{tag}")
+        artifact = api.artifact(f"alelab/opf_param/model-{run.id}:{tag}")
         checkpoint_path = artifact.download(root=tmpdir)
         checkpoint = torch.load(
             Path(checkpoint_path) / "model.ckpt", map_location="cpu", weights_only=True
