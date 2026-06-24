@@ -13,12 +13,13 @@ poetry run python scripts/main.py train simplegat \
     --cost_weight 0.000013 \
     --lr 3e-4 \
     --wd 6.9e-15 \
-    --lr_dual_pointwise 5e2 \
+    --wd_dual_shared 1e-4 \
+    --lr_dual_pointwise 2e2 \
     --lr_dual_shared 1e-2 \
     --n_channels 128 \
     --n_heads 4 \
     --n_layers 20 \
     --mlp_hidden_channels 64 \
     --dropout 0.0 \
-    --multiplier_type pointwise \
+    --multiplier_type primal_embedding \
     --simple_progress 

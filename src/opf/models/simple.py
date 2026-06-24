@@ -70,6 +70,7 @@ class MLPIO(OPFModel):
         """
 
         super().__init__()
+        self.n_channels = n_channels
         self.combine_branch = combine_branch
         self.readin = nn.ModuleDict(
             {
@@ -188,6 +189,42 @@ class MLPIO(OPFModel):
         self, x: torch.Tensor, edge_index: torch.Tensor, edge_attr: torch.Tensor
     ) -> torch.Tensor:
         raise NotImplementedError
+    
+    def embedding(self, graph: HeteroData) -> torch.Tensor:
+        gen_bus_ids = graph["gen", "tie", "bus"].edge_index[1]
+        if (
+            not torch.compiler.is_compiling()
+            and gen_bus_ids.unique().shape[0] != gen_bus_ids.shape[0]
+        ):
+            raise AssertionError("There should be exactly one generator per bus.")
+        # readin, is somewhat complex since we start with a heterogenous graph
+        # and we need to convert it to a homogenous graph
+        # I assume that each bus has at most one generator, so the graph features there represent both (added together)
+        x_gen = self.readin["gen"](graph["bus"].params[gen_bus_ids])
+        x_bus = self.readin["bus"](
+            torch.cat([graph["bus"].load, graph["bus"].params], dim=-1)
+        )
+        x = x_bus.index_add(0, gen_bus_ids, x_gen)
+
+        # Branches have transformers on ONE end, so its assymetric
+        # Therefore I need edges going in the opposite direction
+        edge_index_from, edge_index_to = graph["bus", "branch", "bus"].edge_index
+        edge_index = torch.cat(
+            [
+                torch.stack([edge_index_from, edge_index_to], dim=0),
+                torch.stack([edge_index_to, edge_index_from], dim=0),
+            ],
+            dim=1,
+        )
+        # Since branches are assymetric, I use two different MLPs to embed the edge parameters
+        # I concatenate the embeddings of the two directions, just like I did the edge indices
+        branch_params = graph["bus", "branch", "bus"].params
+        branch_embed_from = self.readin["branch_from"](branch_params)
+        branch_embed_to = self.readin["branch_to"](branch_params)
+        edge_attr = torch.cat([branch_embed_from, branch_embed_to], dim=0)
+
+        x = self._backbone(x, edge_index, edge_attr)
+        return x
 
 
 @ModelRegistry.register("simplegat", False)
@@ -303,7 +340,7 @@ class SimpleGAT(MLPIO):
                 else:
                     x = self._layer_mlp(i, x)
         return x
-
+    
 
 @ModelRegistry.register("simplegated", False)
 class SimpleGated(MLPIO):

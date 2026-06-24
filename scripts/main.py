@@ -28,6 +28,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+class DelayedModelCheckpoint(ModelCheckpoint):
+    """
+    A ModelCheckpoint that only starts tracking 'best' after a given epoch.
+    Prevents early supervised-warmup checkpoints from being selected as best.
+    """
+
+    def __init__(self, start_epoch: int, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.start_epoch = start_epoch
+
+    def on_validation_end(self, trainer, pl_module):
+        if trainer.current_epoch < self.start_epoch:
+            return
+        super().on_validation_end(trainer, pl_module)
 
 class ConsoleProgressBar(ProgressBar):
     """
@@ -172,7 +186,8 @@ def make_trainer(params, callbacks=[], wandb_kwargs={}):
 
         # logger specific callbacks
         callbacks += [
-            ModelCheckpoint(
+            DelayedModelCheckpoint(
+                start_epoch=1000,
                 dirpath=Path(params["log_dir"]) / "checkpoints",
                 monitor="val/invariant",
                 mode="min",

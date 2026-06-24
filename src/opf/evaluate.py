@@ -4,7 +4,7 @@ from opf.test import test_run
 
 torch.set_float32_matmul_precision("high")
 
-RUN_ID = "j6x5931r"  # from W&B
+RUN_ID = "9506zq4r"  # from W&B
 CASE_NAME = "IEEE 30"
 
 df = test_run(
@@ -14,7 +14,7 @@ df = test_run(
     clamp=False,
     output_root_path="data/out",
     data_dir="data",
-    best=True,
+    best=False,
 )
 
 df = df.assign(
