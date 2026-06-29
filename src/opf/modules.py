@@ -149,22 +149,28 @@ class DualModuleWithPrimal(DualModel):
         super().__init__()
         self.enable_shared = True
         self.enable_pointwise = False
-        self.primal_model = primal_model
+        object.__setattr__(self, 'primal_model', primal_model)
         embed_dim = primal_model.n_channels
 
         self.bus_head = nn.Sequential(
             nn.Linear(embed_dim, hidden_dim),
             nn.ReLU(),
+            nn.LayerNorm(hidden_dim),
+            nn.Dropout(0.1),
             nn.Linear(hidden_dim, 5),
         )
         self.gen_head = nn.Sequential(
             nn.Linear(embed_dim, hidden_dim),
             nn.ReLU(),
+            nn.LayerNorm(hidden_dim),
+            nn.Dropout(0.1),
             nn.Linear(hidden_dim, 4),
         )
         self.branch_head = nn.Sequential(
             nn.Linear(embed_dim * 2, hidden_dim),
             nn.ReLU(),
+            nn.LayerNorm(hidden_dim),
+            nn.Dropout(0.1),
             nn.Linear(hidden_dim, 6),
         )
 
@@ -691,51 +697,46 @@ class OPFDual(pl.LightningModule):
         return variables, constraints, cost
 
     def training_step(self, data: PowerflowData, batch_idx: int):
-        primal_optimizer, dual_shared_optimizer = self.optimizers()  # type: ignore
+        primal_optimizer, dual_shared_optimizer = self.optimizers()
+
         variables, Sf_pred, St_pred = self(data)
-        _, constraints, cost = self._step_helper(
-            variables, data.graph, self.model_dual.get_multipliers(data)
-        )
+        is_warmed_up = self.current_epoch >= self.warmup
+        multipliers = self.model_dual.get_multipliers(data) if is_warmed_up else None
+
+        _, constraints, cost = self._step_helper(variables, data.graph, multipliers)
         constraint_loss = self.constraint_loss(constraints)
 
         supervised_loss = self.supervised_loss(data, variables, Sf_pred, St_pred)
-        # linearly decay the supervised loss until 0 at self.current_epoch > self.supervised_warmup
         supervised_weight = self.supervised_weight * (
             max(1.0 - self.current_epoch / self.supervised_warmup, 0.0)
-            if self.supervised_warmup > 0
-            else 1.0
+            if self.supervised_warmup > 0 else 1.0
         )
         powerflow_loss = self.powerflow_loss(data, variables, Sf_pred, St_pred)
 
-        dual_reg = 0.0
-        if isinstance(self.model_dual, DualModuleWithPrimal):
-            multipliers = self.model_dual.get_multipliers(data)
-            dual_reg = sum(v.pow(2).mean() for v in multipliers.values()) * 1e-4
-
-        loss = (
+        primal_loss = (
             self.cost_weight * cost
             + constraint_loss
             + self.powerflow_weight * powerflow_loss
             + supervised_weight * supervised_loss
-            + dual_reg
         )
 
+        # primal update
         primal_optimizer.zero_grad()
-        if isinstance(self.model_dual, DualTable):
-            self.model_dual.zero_grad_pointwise()
         dual_shared_optimizer.zero_grad()
-        self.manual_backward(loss)
-
-        if self.grad_clip_norm > 0:
-            torch.nn.utils.clip_grad_norm_(
-                self.model.parameters(),
-                max_norm=self.grad_clip_norm,
-                norm_type=self.grad_clip_p,
-            )
+        self.manual_backward(primal_loss, retain_graph=True)
         primal_optimizer.step()
 
-        is_warmed_up = self.current_epoch >= self.warmup
-        if isinstance(self.model_dual, DualModule):
+        # dual update
+        if is_warmed_up and isinstance(self.model_dual, DualModuleWithPrimal):
+            dual_reg = sum(
+                v.pow(2).mean() for k, v in multipliers.items()
+                #if k.startswith("inequality")
+            ) * 1e-4
+            dual_loss = constraint_loss - dual_reg
+
+            primal_optimizer.zero_grad()
+            dual_shared_optimizer.zero_grad()
+            self.manual_backward(dual_loss)
             if self.grad_clip_norm_dual > 0:
                 torch.nn.utils.clip_grad_norm_(
                     self.model_dual.parameters_shared(),
@@ -743,15 +744,8 @@ class OPFDual(pl.LightningModule):
                     norm_type=self.grad_clip_p_dual,
                 )
             dual_shared_optimizer.step()
-        elif isinstance(self.model_dual, DualModuleWithPrimal):
-            if is_warmed_up:
-                if self.grad_clip_norm_dual > 0:
-                    torch.nn.utils.clip_grad_norm_(
-                        self.model_dual.parameters_shared(),
-                        max_norm=self.grad_clip_norm_dual,
-                        norm_type=self.grad_clip_p_dual,
-                    )
-                dual_shared_optimizer.step()
+
+        # handle DualTable case
         elif isinstance(self.model_dual, DualTable):
             if is_warmed_up and self.model_dual.enable_pointwise:
                 if self.grad_clip_norm_dual > 0:
@@ -760,7 +754,6 @@ class OPFDual(pl.LightningModule):
                         p=self.grad_clip_p_dual,
                         index=data.index,
                     )
-                # updating the pointwise multipliers is done manually
                 self.model_dual.step_pointwise(
                     idx=data.index,
                     lr=self.lr_dual_pointwise,
@@ -769,26 +762,21 @@ class OPFDual(pl.LightningModule):
                 )
                 self.model_dual.project_pointwise(data.index)
             if is_warmed_up and self.model_dual.enable_shared:
-                # update the shared multipliers
                 if self.grad_clip_norm_dual > 0:
                     self.model_dual.grad_clip_norm_shared(
                         value=self.grad_clip_norm_dual,
                         p=self.grad_clip_p_dual,
                     )
+                dual_shared_optimizer.zero_grad()
+                self.manual_backward(-constraint_loss)
                 dual_shared_optimizer.step()
                 self.model_dual.project_shared()
 
-        self.log(
-            "train/loss",
-            loss,
-            prog_bar=True,
-            batch_size=data.graph.num_graphs,
-            sync_dist=True,
-        )
+        self.log("train/loss", primal_loss, prog_bar=True,
+                batch_size=data.graph.num_graphs, sync_dist=True)
         self.log_dict(
             self.metrics(cost, constraints, "train", self.detailed_metrics, train=True),
-            batch_size=data.graph.num_graphs,
-            sync_dist=True,
+            batch_size=data.graph.num_graphs, sync_dist=True,
         )
 
     def validation_step(self, batch: PowerflowData, *args):
@@ -937,7 +925,7 @@ class OPFDual(pl.LightningModule):
         constraint_losses = [
             val["loss"]
             for val in constraints.values()
-            if val["loss"] is not None and not torch.isnan(val["loss"])
+            if "loss" in val and val["loss"] is not None and not torch.isnan(val["loss"])
         ]
         if len(constraint_losses) == 0:
             return torch.zeros(1, device=self.device)
@@ -1060,6 +1048,9 @@ class OPFDual(pl.LightningModule):
                 aggregate_name = f"{prefix}/{constraint_type}/{value_name}"
                 aggregate_metrics[aggregate_name].append(value.reshape(1))
         for aggregate_name in aggregate_metrics:
+            if len(aggregate_metrics[aggregate_name]) == 0:
+                aggregate_metrics[aggregate_name] = torch.zeros(1, device=self.device)
+                continue
             value_name = aggregate_name.rsplit("/", 1)[1]
             fn = (
                 reduce_fn[value_name]

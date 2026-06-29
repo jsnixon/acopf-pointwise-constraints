@@ -4,7 +4,7 @@ from opf.test import test_run
 
 torch.set_float32_matmul_precision("high")
 
-RUN_ID = "9506zq4r"  # from W&B
+RUN_ID = "ksiwcxip"  # from W&B
 CASE_NAME = "IEEE 30"
 
 df = test_run(
@@ -24,4 +24,12 @@ df = df.assign(
     optimality_gap=lambda df: df["test/cost"] / df["acopf/cost"] - 1,
 )
 
-print(df[["optimality_gap", "test_normal/inequality/error_mean", "test_normal/inequality/error_max"]].describe())
+print(df[['optimality_gap', 
+           'test_normal/inequality/error_mean', 
+           'test_normal/inequality/error_max',
+           'test_normal/equality/error_mean',
+           'test_normal/equality/error_max',
+           'test/cost',
+           'acopf/cost',
+           'test_normal/inequality/rate',
+           'test_normal/equality/rate']].describe())

@@ -1,16 +1,17 @@
-poetry run python scripts/main.py train simplegat \
+#!/bin/bash
+CUDA_VISIBLE_DEVICES=0 poetry run python scripts/main.py train simplegat \
     --data_dir data \
     --case_name case30_ieee \
     --batch_size 32 \
     --num_workers 0 \
-    --max_epochs 3000 \
+    --max_epochs 2000 \
     --patience 10000 \
     --supervised_warmup 500 \
     --supervised_weight 10 \
     --warmup 250 \
     --augmented_weight 5 \
     --equality_weight 5 \
-    --cost_weight 0.000013 \
+    --cost_weight 1.3e-5 \
     --lr 3e-4 \
     --wd 6.9e-15 \
     --wd_dual_shared 1e-4 \
@@ -21,5 +22,4 @@ poetry run python scripts/main.py train simplegat \
     --n_layers 20 \
     --mlp_hidden_channels 64 \
     --dropout 0.0 \
-    --multiplier_type primal_embedding \
-    --simple_progress 
+    --multiplier_type primal_embedding 

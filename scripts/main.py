@@ -29,19 +29,19 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class DelayedModelCheckpoint(ModelCheckpoint):
-    """
-    A ModelCheckpoint that only starts tracking 'best' after a given epoch.
-    Prevents early supervised-warmup checkpoints from being selected as best.
-    """
-
     def __init__(self, start_epoch: int, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.start_epoch = start_epoch
 
-    def on_validation_end(self, trainer, pl_module):
+    def _update_best_and_save(self, current, trainer, monitor_candidates):
         if trainer.current_epoch < self.start_epoch:
             return
-        super().on_validation_end(trainer, pl_module)
+        super()._update_best_and_save(current, trainer, monitor_candidates)
+
+    def _save_last_checkpoint(self, trainer, monitor_candidates):
+        if trainer.current_epoch < self.start_epoch:
+            return
+        super()._save_last_checkpoint(trainer, monitor_candidates)
 
 class ConsoleProgressBar(ProgressBar):
     """

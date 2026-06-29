@@ -75,7 +75,7 @@ def load_run(
             for k, v in state_dict.items()
             if "model." in k
         }
-        model.load_state_dict(state_dict, strict=True)
+        model.load_state_dict(state_dict, strict=False)
     return dm, opfdual
 
 
