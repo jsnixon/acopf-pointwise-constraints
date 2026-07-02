@@ -19,6 +19,7 @@ from torchcps.utils import add_model_specific_args
 
 import opf.powerflow as pf
 from opf.constraints import equality, inequality
+from opf.constraints import wrap_angle
 from opf.dataset import PowerflowData
 from opf.models.base import OPFModel
 
@@ -699,6 +700,7 @@ class OPFDual(pl.LightningModule):
     def training_step(self, data: PowerflowData, batch_idx: int):
         primal_optimizer, dual_shared_optimizer = self.optimizers()
 
+
         variables, Sf_pred, St_pred = self(data)
         is_warmed_up = self.current_epoch >= self.warmup
         multipliers = self.model_dual.get_multipliers(data) if is_warmed_up else None
@@ -728,12 +730,25 @@ class OPFDual(pl.LightningModule):
 
         # dual update
         if is_warmed_up and isinstance(self.model_dual, DualModuleWithPrimal):
+            violations = self.get_constraint_violations(variables, data.graph)
+            supervised_dual_loss = 0
+            for name, predicted in multipliers.items():
+                v = violations[name].detach()
+                if name.startswith("equality"):
+                    target = v
+                else:
+                    target = torch.clamp(v, min=0)
+                supervised_dual_loss += F.mse_loss(predicted, target)
+                
+            alpha = 0.1
+            dual_loss = constraint_loss - alpha * supervised_dual_loss
+            """
             dual_reg = sum(
                 v.pow(2).mean() for k, v in multipliers.items()
                 #if k.startswith("inequality")
             ) * 1e-4
             dual_loss = constraint_loss - dual_reg
-
+            """
             primal_optimizer.zero_grad()
             dual_shared_optimizer.zero_grad()
             self.manual_backward(dual_loss)
@@ -831,6 +846,12 @@ class OPFDual(pl.LightningModule):
         # self.log_dict(acopf_metrics)
         # return dict(**test_metrics, **acopf_metrics)
         return test_metrics
+    
+    def on_train_epoch_end(self):
+        if self.current_epoch >= self.warmup:
+            scheduler = self.lr_schedulers()
+            if scheduler is not None:
+                scheduler.step()
 
     def project_powermodels(
         self,
@@ -957,6 +978,21 @@ class OPFDual(pl.LightningModule):
         # normalize the cost by the reference cost (IPOPT cost)
         cost_per_batch = cost_per_batch / graph.reference_cost
         return cost_per_batch.mean()
+    
+    def get_constraint_violations(self, variables, graph):
+        constraints = pf.build_constraints(variables, graph, self.dual_graph)
+        violations = {}
+        for name, constraint in constraints.items():
+            if isinstance(constraint, pf.EqualityConstraint):
+                u = constraint.value - constraint.target
+                if constraint.isAngle:
+                    u = wrap_angle(u)
+                violations[name] = u  # (n_bus, 1) — can be pos or neg
+            elif isinstance(constraint, pf.InequalityConstraint):
+                u_lower = constraint.min - constraint.variable
+                u_upper = constraint.variable - constraint.max
+                violations[name] = torch.cat([u_lower, u_upper], dim=-1)  # (n_nodes, 2)
+        return violations
 
     def constraints(
         self,
@@ -1081,8 +1117,13 @@ class OPFDual(pl.LightningModule):
         else:
             logger.info("Using NullOptimizer for dual shared parameters.")
             dual_shared_optimizer = NullOptimizer()
+        
+        dual_scheduler = torch.optim.lr_scheduler.ExponentialLR(
+            dual_shared_optimizer,
+            gamma=0.9997
+        )
 
-        return [primal_optimizer, dual_shared_optimizer]
+        return [primal_optimizer, dual_shared_optimizer], [dual_scheduler]
 
     @staticmethod
     def bus_from_polar(bus):

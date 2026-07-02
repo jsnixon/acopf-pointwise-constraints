@@ -27,6 +27,7 @@ def load_run(
     batch_size: int | None = None,
     data_dir: str = "../data",
     best: bool = True,
+    local_checkpoint_path: str | None = None,
 ):
     run_uri = f"wandb://alelab/opf_param/{run_id}"
     base, path = run_uri.split("://")
@@ -37,7 +38,6 @@ def load_run(
     run = api.run(path)
     config = run.config
 
-    # override some config values
     config.update(data_dir=data_dir)
     config.update(num_workers=0)
     if batch_size is not None:
@@ -60,6 +60,17 @@ def load_run(
         **run.config,
     )
     opfdual = OPFDual(model, None, n_nodes, n_train=0, **config).cuda()
+
+    if local_checkpoint_path is not None:
+        checkpoint = torch.load(local_checkpoint_path, map_location="cpu", weights_only=True)
+        state_dict = checkpoint["state_dict"]
+        state_dict = {
+            k.replace("model.", "").replace("_orig_mod.", ""): v
+            for k, v in state_dict.items()
+            if "model." in k
+        }
+        model.load_state_dict(state_dict, strict=False)
+        return dm, opfdual
 
     # load checkpoint
     with TemporaryDirectory() as tmpdir:
@@ -88,6 +99,7 @@ def test_run(
     output_root_path: str = "../data/out",
     data_dir: str = "../data",
     best: bool = True,
+    local_checkpoint_path: str | None = None,
 ):
     project_suffix = "_project" if project else ""
     clamp_suffix = "_clamp" if clamp else ""
@@ -99,7 +111,7 @@ def test_run(
         return pd.read_parquet(data_path)
 
     metrics = []
-    dm, opfdual = load_run(run_id, batch_size, data_dir=data_dir, best=best)
+    dm, opfdual = load_run(run_id, batch_size, data_dir=data_dir, best=best, local_checkpoint_path=local_checkpoint_path)
     with torch.no_grad(), h5py.File(Path(dm.dataset_path), "r") as f:
         for data in tqdm(dm.test_dataloader()):
             data = data_to_device(data, "cuda")

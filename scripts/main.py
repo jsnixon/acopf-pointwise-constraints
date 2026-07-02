@@ -191,10 +191,11 @@ def make_trainer(params, callbacks=[], wandb_kwargs={}):
                 dirpath=Path(params["log_dir"]) / "checkpoints",
                 monitor="val/invariant",
                 mode="min",
-                filename="best",
+                filename="best-{epoch:04d}",
                 auto_insert_metric_name=False,
-                save_top_k=1,
+                save_top_k=10,
                 save_last=True,
+                enable_version_counter=False
             ),
         ]
     callbacks += [EarlyStopping(monitor="val/invariant", patience=params["patience"])]
@@ -211,7 +212,7 @@ def make_trainer(params, callbacks=[], wandb_kwargs={}):
         default_root_dir=params["log_dir"],
         fast_dev_run=params["fast_dev_run"],
         gradient_clip_val=params["gradient_clip_val"],
-        log_every_n_steps=1,
+        log_every_n_steps=50,
         check_val_every_n_epoch=params["val_interval"],
     )
     return trainer
