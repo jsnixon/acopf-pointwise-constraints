@@ -16,7 +16,6 @@ CUDA_VISIBLE_DEVICES=1 poetry run python scripts/main.py train simplegat \
     --wd 6.9e-15 \
     --wd_dual_shared 0.00001 \
     --lr_dual_shared 1e-2 \
-    --lr_dual_pointwise 1e-2 \
     --n_channels 128 \
     --n_heads 4 \
     --n_layers 20 \

@@ -1,4 +1,5 @@
 import abc
+import sys
 import logging
 import subprocess
 from collections import OrderedDict
@@ -172,7 +173,7 @@ class DualModuleWithPrimal(DualModel):
             nn.ReLU(),
             nn.LayerNorm(hidden_dim),
             nn.Dropout(0.1),
-            nn.Linear(hidden_dim, 6),
+            nn.Linear(hidden_dim, 4),
         )
 
     @staticmethod
@@ -200,9 +201,6 @@ class DualModuleWithPrimal(DualModel):
             "inequality/backward_rate": self.branch_head(
                 torch.cat([x[edge_index_from], x[edge_index_to]], dim=1)
             )[:, 2:4],
-            "inequality/voltage_angle_difference": self.branch_head(
-                torch.cat([x[edge_index_from], x[edge_index_to]], dim=1)
-            )[:, 4:6],
         }
 
         # project inequality multipliers positive
@@ -730,6 +728,7 @@ class OPFDual(pl.LightningModule):
 
         # dual update
         if is_warmed_up and isinstance(self.model_dual, DualModuleWithPrimal):
+            """
             violations = self.get_constraint_violations(variables, data.graph)
             supervised_dual_loss = 0
             for name, predicted in multipliers.items():
@@ -738,17 +737,18 @@ class OPFDual(pl.LightningModule):
                     target = v
                 else:
                     target = torch.clamp(v, min=0)
-                supervised_dual_loss += F.mse_loss(predicted, target)
-                
+                supervised_dual_loss += F.mse_loss(predicted, target, reduction='sum')
+
             alpha = 0.1
             dual_loss = constraint_loss - alpha * supervised_dual_loss
             """
+            
             dual_reg = sum(
                 v.pow(2).mean() for k, v in multipliers.items()
                 #if k.startswith("inequality")
             ) * 1e-4
             dual_loss = constraint_loss - dual_reg
-            """
+            
             primal_optimizer.zero_grad()
             dual_shared_optimizer.zero_grad()
             self.manual_backward(dual_loss)
@@ -989,9 +989,9 @@ class OPFDual(pl.LightningModule):
                     u = wrap_angle(u)
                 violations[name] = u  # (n_bus, 1) — can be pos or neg
             elif isinstance(constraint, pf.InequalityConstraint):
-                u_lower = constraint.min - constraint.variable
-                u_upper = constraint.variable - constraint.max
-                violations[name] = torch.cat([u_lower, u_upper], dim=-1)  # (n_nodes, 2)
+                u_lower = (constraint.min - constraint.variable).unsqueeze(-1)
+                u_upper = (constraint.variable - constraint.max).unsqueeze(-1)
+                violations[name] = torch.cat([u_lower, u_upper], dim=-1)
         return violations
 
     def constraints(
