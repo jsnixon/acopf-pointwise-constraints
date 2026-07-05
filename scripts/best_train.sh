@@ -10,12 +10,12 @@ CUDA_VISIBLE_DEVICES=1 poetry run python scripts/main.py train simplegat \
     --supervised_weight 10 \
     --warmup 250 \
     --augmented_weight 5 \
-    --equality_weight 5 \
+    --equality_weight 1 \
     --cost_weight 0.1 \
     --lr 5e-4 \
     --wd 0.0 \
     --wd_dual_shared 0.0 \
-    --lr_dual_shared 1e-1 \
+    --lr_dual_shared 1e-2 \
     --n_channels 128 \
     --n_heads 8 \
     --n_layers 20 \

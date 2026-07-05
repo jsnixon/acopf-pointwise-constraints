@@ -4,7 +4,7 @@ from opf.test import test_run
 
 torch.set_float32_matmul_precision("high")
 
-RUN_ID = "i4qftb5m"  # from W&B
+RUN_ID = "dxqjpe3r"  # from W&B
 CASE_NAME = "IEEE 30"
 
 df = test_run(

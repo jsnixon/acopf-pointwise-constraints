@@ -229,6 +229,96 @@ class DualModuleWithPrimal(DualModel):
     def parameters_pointwise(self) -> Iterator[nn.Parameter]:
         return iter([])
     
+class DualModuleWithPrimalPerNode(DualModuleWithPrimal):
+    """
+    Per-node MLP variant of DualModuleWithPrimal.
+    Each bus, generator, and branch has its own dedicated MLP head,
+    allowing node-specific specialization without generalization constraints.
+    """
+    def __init__(self, primal_model: OPFModel, hidden_dim: int = 256,
+                 n_bus: int = 30, n_gen: int = 6, n_branch: int = 41):
+        # call DualModel.__init__ directly, not DualModuleWithPrimal.__init__
+        # to avoid creating the shared heads we're replacing
+        DualModel.__init__(self)
+        self.enable_shared = True
+        self.enable_pointwise = False
+        object.__setattr__(self, 'primal_model', primal_model)
+        embed_dim = primal_model.n_channels
+
+        self.bus_heads = nn.ModuleList([
+            nn.Sequential(
+                nn.Linear(embed_dim, hidden_dim),
+                nn.ReLU(),
+                nn.LayerNorm(hidden_dim),
+                nn.Linear(hidden_dim, 5),
+            )
+            for _ in range(n_bus)
+        ])
+        self.gen_heads = nn.ModuleList([
+            nn.Sequential(
+                nn.Linear(embed_dim, hidden_dim),
+                nn.ReLU(),
+                nn.LayerNorm(hidden_dim),
+                nn.Linear(hidden_dim, 4),
+            )
+            for _ in range(n_gen)
+        ])
+        self.branch_heads = nn.ModuleList([
+            nn.Sequential(
+                nn.Linear(embed_dim * 2, hidden_dim),
+                nn.ReLU(),
+                nn.LayerNorm(hidden_dim),
+                nn.Linear(hidden_dim, 4),
+            )
+            for _ in range(n_branch)
+        ])
+
+    def get_multipliers(self, data: PowerflowData) -> dict[str, torch.Tensor]:
+        graph = data.graph
+        with torch.no_grad():
+            x = self.primal_model.embedding(graph)
+
+        gen_bus_ids = graph["gen", "tie", "bus"].edge_index[1]
+        edge_index_from, edge_index_to = graph["bus", "branch", "bus"].edge_index
+
+        n_bus = x.shape[0]
+        n_gen = gen_bus_ids.shape[0]
+        n_branch = edge_index_from.shape[0]
+
+        y_bus = torch.stack([self.bus_heads[i](x[i]) for i in range(n_bus)])
+        y_gen = torch.stack([self.gen_heads[i](x[gen_bus_ids[i]]) for i in range(n_gen)])
+        y_branch = torch.stack([
+            self.branch_heads[i](torch.cat([x[edge_index_from[i]], x[edge_index_to[i]]]))
+            for i in range(n_branch)
+        ])
+
+        multiplier_dict = {
+            "equality/bus_active_power": y_bus[:, 0:1],
+            "equality/bus_reactive_power": y_bus[:, 1:2],
+            "equality/bus_reference": y_bus[:, 2:3],
+            "inequality/voltage_magnitude": y_bus[:, 3:5],
+            "inequality/active_power": y_gen[:, 0:2],
+            "inequality/reactive_power": y_gen[:, 2:4],
+            "inequality/forward_rate": y_branch[:, 0:2],
+            "inequality/backward_rate": y_branch[:, 2:4],
+        }
+
+        for name in multiplier_dict:
+            if name.startswith("inequality"):
+                multiplier_dict[name] = F.smooth_l1_loss(
+                    multiplier_dict[name],
+                    torch.zeros_like(multiplier_dict[name]),
+                    reduction="none",
+                )
+        return multiplier_dict
+
+    def parameters_shared(self) -> Iterator[nn.Parameter]:
+        return chain(
+            *[m.parameters() for m in self.bus_heads],
+            *[m.parameters() for m in self.gen_heads],
+            *[m.parameters() for m in self.branch_heads],
+        )
+    
 class DualTable(DualModel):
     def __init__(
         self,
@@ -553,6 +643,14 @@ class OPFDual(pl.LightningModule):
                 primal_model=self.model,
                 hidden_dim=256,
             )
+        elif multiplier_type == "primal_embedding_per_node":
+            self.model_dual = DualModuleWithPrimalPerNode(
+                primal_model=self.model,
+                hidden_dim=256,
+                n_bus=n_nodes[0],
+                n_gen=n_nodes[2],
+                n_branch=n_nodes[1],
+            )
         else:
             raise ValueError(f"Unknown multiplier type: {multiplier_type}")
 
@@ -746,7 +844,7 @@ class OPFDual(pl.LightningModule):
             dual_reg = sum(
                 v.pow(2).mean() for k, v in multipliers.items()
                 #if k.startswith("inequality")
-            ) * 1e-4
+            ) * 1e-3
             dual_loss = constraint_loss - dual_reg
             
             primal_optimizer.zero_grad()
