@@ -278,19 +278,44 @@ class DualModuleWithPrimalPerNode(DualModuleWithPrimal):
         with torch.no_grad():
             x = self.primal_model.embedding(graph)
 
+        num_graphs = graph.num_graphs
+        n_bus = x.shape[0] // num_graphs
+        
         gen_bus_ids = graph["gen", "tie", "bus"].edge_index[1]
         edge_index_from, edge_index_to = graph["bus", "branch", "bus"].edge_index
+        
+        n_gen = gen_bus_ids.shape[0] // num_graphs
+        n_branch = edge_index_from.shape[0] // num_graphs
 
-        n_bus = x.shape[0]
-        n_gen = gen_bus_ids.shape[0]
-        n_branch = edge_index_from.shape[0]
+        # bus heads
+        y_bus_list = []
+        for g in range(num_graphs):
+            x_g = x[g * n_bus:(g + 1) * n_bus]
+            y_g = torch.stack([self.bus_heads[i](x_g[i]) for i in range(n_bus)])
+            y_bus_list.append(y_g)
+        y_bus = torch.cat(y_bus_list, dim=0)
 
-        y_bus = torch.stack([self.bus_heads[i](x[i]) for i in range(n_bus)])
-        y_gen = torch.stack([self.gen_heads[i](x[gen_bus_ids[i]]) for i in range(n_gen)])
-        y_branch = torch.stack([
-            self.branch_heads[i](torch.cat([x[edge_index_from[i]], x[edge_index_to[i]]]))
-            for i in range(n_branch)
-        ])
+        # gen heads
+        y_gen_list = []
+        for g in range(num_graphs):
+            gen_ids_g = gen_bus_ids[g * n_gen:(g + 1) * n_gen] - g * n_bus
+            x_g = x[g * n_bus:(g + 1) * n_bus]
+            y_g = torch.stack([self.gen_heads[i](x_g[gen_ids_g[i]]) for i in range(n_gen)])
+            y_gen_list.append(y_g)
+        y_gen = torch.cat(y_gen_list, dim=0)
+
+        # branch heads
+        y_branch_list = []
+        for g in range(num_graphs):
+            from_g = edge_index_from[g * n_branch:(g + 1) * n_branch] - g * n_bus
+            to_g = edge_index_to[g * n_branch:(g + 1) * n_branch] - g * n_bus
+            x_g = x[g * n_bus:(g + 1) * n_bus]
+            y_g = torch.stack([
+                self.branch_heads[i](torch.cat([x_g[from_g[i]], x_g[to_g[i]]]))
+                for i in range(n_branch)
+            ])
+            y_branch_list.append(y_g)
+        y_branch = torch.cat(y_branch_list, dim=0)
 
         multiplier_dict = {
             "equality/bus_active_power": y_bus[:, 0:1],
