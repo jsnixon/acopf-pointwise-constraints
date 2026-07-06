@@ -28,5 +28,5 @@ CUDA_VISIBLE_DEVICES=1 poetry run python scripts/main.py train simplegat \
     --grad_clip_p_dual 2.0 \
     --powerflow_weight 1.0 \
     --dropout 0.0 \
-    --multiplier_type primal_embedding_per_node \
+    --multiplier_type primal_embedding \
     --simple_progress

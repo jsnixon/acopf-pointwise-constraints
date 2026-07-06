@@ -869,7 +869,7 @@ class OPFDual(pl.LightningModule):
             dual_reg = sum(
                 v.pow(2).mean() for k, v in multipliers.items()
                 #if k.startswith("inequality")
-            ) * 1e-3
+            ) * 5e-4
             dual_loss = constraint_loss - dual_reg
             
             primal_optimizer.zero_grad()
