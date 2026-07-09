@@ -193,7 +193,7 @@ def make_trainer(params, callbacks=[], wandb_kwargs={}):
                 mode="min",
                 filename="best-{epoch:04d}",
                 auto_insert_metric_name=False,
-                save_top_k=10,
+                save_top_k=5,
                 save_last=True,
                 enable_version_counter=False
             ),

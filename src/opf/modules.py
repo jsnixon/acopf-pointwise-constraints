@@ -869,7 +869,7 @@ class OPFDual(pl.LightningModule):
             dual_reg = sum(
                 v.pow(2).mean() for k, v in multipliers.items()
                 #if k.startswith("inequality")
-            ) * 5e-4
+            ) * 1e-3
             dual_loss = constraint_loss - dual_reg
             
             primal_optimizer.zero_grad()
@@ -1243,7 +1243,7 @@ class OPFDual(pl.LightningModule):
         
         dual_scheduler = torch.optim.lr_scheduler.ExponentialLR(
             dual_shared_optimizer,
-            gamma=0.9997
+            gamma=0.9998
         )
 
         return [primal_optimizer, dual_shared_optimizer], [dual_scheduler]
