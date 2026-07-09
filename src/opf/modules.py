@@ -975,6 +975,8 @@ class OPFDual(pl.LightningModule):
             scheduler = self.lr_schedulers()
             if scheduler is not None:
                 scheduler.step()
+                current_lr = scheduler.get_last_lr()[0]
+                self.log('train/dual_lr', current_lr, sync_dist=True)
 
     def project_powermodels(
         self,
@@ -1247,10 +1249,11 @@ class OPFDual(pl.LightningModule):
         )
         """
         def lr_lambda(epoch):
-            if epoch < 1250:
-                return 0.9998 ** epoch
+            if epoch < 2000:
+                val = 0.9998 ** epoch
             else:
-                return 0.9998 ** 1250 * 0.993 ** (epoch - 1250)
+                val = 0.9998 ** 2000 * 0.993 ** (epoch - 2000)
+            return max(val, 5e-4 / 9e-3)
 
         dual_scheduler = torch.optim.lr_scheduler.LambdaLR(
             dual_shared_optimizer,
