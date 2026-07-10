@@ -1252,7 +1252,7 @@ class OPFDual(pl.LightningModule):
             if epoch < 2000:
                 val = 0.9998 ** epoch
             else:
-                val = 0.9998 ** 2000 * 0.993 ** (epoch - 2000)
+                val = 0.9998 ** 2000 * 0.997 ** (epoch - 2000)
             return max(val, 5e-4 / 9e-3)
 
         dual_scheduler = torch.optim.lr_scheduler.LambdaLR(
