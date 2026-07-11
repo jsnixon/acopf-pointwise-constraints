@@ -1242,11 +1242,12 @@ class OPFDual(pl.LightningModule):
         else:
             logger.info("Using NullOptimizer for dual shared parameters.")
             dual_shared_optimizer = NullOptimizer()
-        """
+
         dual_scheduler = torch.optim.lr_scheduler.ExponentialLR(
             dual_shared_optimizer,
-            gamma=0.9998
+            gamma=0.9997
         )
+
         """
         def lr_lambda(epoch):
             if epoch < 2000:
@@ -1259,7 +1260,7 @@ class OPFDual(pl.LightningModule):
             dual_shared_optimizer,
             lr_lambda=lr_lambda
         )
-
+        """
         return [primal_optimizer, dual_shared_optimizer], [dual_scheduler]
 
     @staticmethod
