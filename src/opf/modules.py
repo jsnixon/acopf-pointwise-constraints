@@ -182,8 +182,8 @@ class DualModuleWithPrimal(DualModel):
 
     def get_multipliers(self, data: PowerflowData) -> dict[str, torch.Tensor]:
         graph = data.graph
-        with torch.no_grad():
-            x = self.primal_model.embedding(graph)
+        
+        x = self.primal_model.embedding(graph)
 
         gen_bus_ids = graph["gen", "tie", "bus"].edge_index[1]
         edge_index_from, edge_index_to = graph["bus", "branch", "bus"].edge_index
