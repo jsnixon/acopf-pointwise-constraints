@@ -59,7 +59,8 @@ def load_run(
         metadata=dm.metadata(),
         **run.config,
     )
-    opfdual = OPFDual(model, None, n_nodes, n_train=0, **config).cuda()
+    n_train = len(dm.train_dataset) if dm.train_dataset is not None else 0
+    opfdual = OPFDual(model, None, n_nodes, n_train=n_train, **config).cuda()
 
     if local_checkpoint_path is not None:
         checkpoint = torch.load(local_checkpoint_path, map_location="cpu", weights_only=True)
@@ -70,6 +71,13 @@ def load_run(
             if "model." in k
         }
         model.load_state_dict(state_dict, strict=False)
+        # load dual weights
+        dual_state = {
+            k.replace("model_dual.", ""): v
+            for k, v in checkpoint["state_dict"].items()
+            if k.startswith("model_dual.")
+        }
+        opfdual.model_dual.load_state_dict(dual_state, strict=False)
         return dm, opfdual
 
     # load checkpoint
@@ -87,6 +95,13 @@ def load_run(
             if "model." in k
         }
         model.load_state_dict(state_dict, strict=False)
+        # load dual weights
+        dual_state = {
+            k.replace("model_dual.", ""): v
+            for k, v in checkpoint["state_dict"].items()
+            if k.startswith("model_dual.")
+        }
+        opfdual.model_dual.load_state_dict(dual_state, strict=False)
     return dm, opfdual
 
 

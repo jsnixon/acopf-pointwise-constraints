@@ -1,24 +1,33 @@
 #!/bin/bash
 CUDA_VISIBLE_DEVICES=1 poetry run python scripts/main.py train simplegat \
-    --data_dir data \
-    --case_name case30_ieee \
-    --batch_size 32 \
-    --num_workers 0 \
-    --max_epochs 5000 \
-    --patience 10000 \
-    --supervised_warmup 500 \
-    --supervised_weight 10 \
-    --warmup 250 \
-    --augmented_weight 5 \
-    --equality_weight 5 \
-    --cost_weight 1.3e-5 \
-    --lr 3e-4 \
-    --wd 6.9e-15 \
-    --wd_dual_shared 0.00001 \
-    --lr_dual_shared 1e-2 \
+    --batch_size 500 \
+    --tag best-checkpoint \
     --n_channels 128 \
-    --n_heads 4 \
     --n_layers 20 \
-    --mlp_hidden_channels 64 \
-    --dropout 0.0 \
-    --multiplier_type primal_embedding
+    --n_heads 8 \
+    --mlp_hidden_channels 256 \
+    --mlp_per_gnn_layers 2 \
+    --mlp_read_layers 2 \
+    --lr 5e-4 \
+    --powerflow_weight 1.0 \
+    --grad_clip_norm_dual 1.0 \
+    --grad_clip_p_dual 2.0 \
+    --grad_clip_norm 1.0 \
+    --grad_clip_p 2.0 \
+    --max_epochs 3000 \
+    --patience 5000 \
+    --case_name case30_ieee \
+    --wd 0.0 \
+    --wd_dual_shared 0.0 \
+    --wd_dual_pointwise 0.0 \
+    --lr_dual_shared 0.01 \
+    --lr_dual_pointwise 5e3 \
+    --cost_weight 0.1 \
+    --multiplier_type pointwise \
+    --augmented_weight 5.0 \
+    --warmup 250 \
+    --supervised_warmup 500 \
+    --supervised_weight 10.0 \
+    --tag supervised-warmup \
+    --tag pointwise \
+    --simple_progress

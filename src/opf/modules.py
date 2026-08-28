@@ -971,7 +971,7 @@ class OPFDual(pl.LightningModule):
         return test_metrics
     
     def on_train_epoch_end(self):
-        if self.current_epoch >= self.warmup:
+        if self.current_epoch >= self.warmup and isinstance(self.model_dual, DualModuleWithPrimal):
             scheduler = self.lr_schedulers()
             if scheduler is not None:
                 scheduler.step()
@@ -1242,26 +1242,15 @@ class OPFDual(pl.LightningModule):
         else:
             logger.info("Using NullOptimizer for dual shared parameters.")
             dual_shared_optimizer = NullOptimizer()
-        
-        dual_scheduler = torch.optim.lr_scheduler.ExponentialLR(
-            dual_shared_optimizer,
-            gamma=0.9997
-        )
-        
-        """
-        def lr_lambda(epoch):
-            if epoch < 2000:
-                val = 0.9998 ** epoch
-            else:
-                val = 0.9998 ** 2000 * 0.9993 ** (epoch - 2000)
-            return max(val, 5e-4 / 9e-3)
 
-        dual_scheduler = torch.optim.lr_scheduler.LambdaLR(
-            dual_shared_optimizer,
-            lr_lambda=lr_lambda
-        )
-        """
-        return [primal_optimizer, dual_shared_optimizer], [dual_scheduler]
+        if isinstance(self.model_dual, DualModuleWithPrimal):
+            dual_scheduler = torch.optim.lr_scheduler.ExponentialLR(
+                dual_shared_optimizer,
+                gamma=0.9997
+            )
+            return [primal_optimizer, dual_shared_optimizer], [dual_scheduler]
+        else:
+            return [primal_optimizer, dual_shared_optimizer]
 
     @staticmethod
     def bus_from_polar(bus):
